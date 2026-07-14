@@ -24,6 +24,7 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Accessed the Proxmox web UI remotely from another device
 - Configured the server to run with the laptop lid closed
 - Installed Docker and deployed n8n for workflow automation
+- Built a battery alert workflow that sends a Discord notification when the server is running on battery power
 
 ---
 
@@ -119,6 +120,20 @@ docker run -d \
 
 Accessible at `http://<proxmox-ip>:5678` from any device on the network.
 
+### 11. Building a Battery Alert Workflow in n8n
+Created an automated workflow that checks battery status every 5 minutes and sends a Discord alert if the server is running on battery power.
+
+Workflow steps:
+1. **Schedule Trigger** - runs every 5 minutes
+2. **SSH Execute Command** - runs `acpi -b` on the Proxmox server to get battery status
+3. **IF node** - checks if the output contains `Discharging`
+4. **Discord node** - sends a warning message to a private Discord channel if true
+
+Alert message:
+```
+⚠️ WARNING: Proxmox is running on battery power! Check the server immediately.
+```
+
 ---
 
 ## Issues Faced and How They Were Fixed
@@ -142,7 +157,8 @@ Accessible at `http://<proxmox-ip>:5678` from any device on the network.
 - [ ] Set up automated backups
 - [ ] Expand storage
 - [ ] Set up TLS/HTTPS for n8n
-- [ ] Build automation workflows in n8n
+- [ ] Build more automation workflows in n8n
+- [ ] Add CPU and RAM usage alerts
 
 ---
 

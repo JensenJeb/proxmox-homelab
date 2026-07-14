@@ -28,6 +28,7 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Set up an internal `10.0.0.0/24` network for containers with NAT through WiFi
 - Deployed Pi-hole in an LXC container for DNS filtering and ad blocking
 - Set up nginx reverse proxy to access Pi-hole from the home network
+- Installed Tailscale VPN for secure remote access to the server from anywhere without opening router ports
 
 ---
 
@@ -184,6 +185,17 @@ systemctl restart nginx
 
 Pi-hole dashboard accessible at `http://192.168.1.159:8888/admin`.
 
+### 15. Setting Up Tailscale VPN
+Installed Tailscale on the Proxmox host for secure remote access from anywhere:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+apt install tailscale -y
+tailscale up
+```
+
+After authenticating via the Tailscale URL, all services are accessible remotely via the Tailscale IP without opening any ports on the router. Traffic is peer to peer and never passes through Tailscale's servers.
+
 ---
 
 ## Issues Faced and How They Were Fixed
@@ -204,12 +216,12 @@ Pi-hole dashboard accessible at `http://192.168.1.159:8888/admin`.
 ## Next Steps
 
 - [ ] Create first VM
-- [ ] Configure persistent network settings so routes survive reboot
 - [ ] Set up automated backups
 - [ ] Expand storage
-- [ ] Set up TLS/HTTPS for n8n
+- [ ] Set up TLS/HTTPS for n8n via Tailscale
 - [ ] Build more automation workflows in n8n
 - [ ] Add CPU and RAM usage alerts
+- [ ] Configure Pi-hole as network-wide DNS
 
 ---
 
@@ -220,3 +232,4 @@ Pi-hole dashboard accessible at `http://192.168.1.159:8888/admin`.
 - Routes set with `ip route` are not persistent across reboots; they need to be added to `/etc/network/interfaces`
 - LXC containers on an isolated bridge need NAT rules on the host to access the internet
 - nginx reverse proxy is a lightweight way to expose internal services without opening them directly to the home network
+- Tailscale provides zero-config peer to peer VPN without requiring port forwarding or a static IP

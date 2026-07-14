@@ -23,6 +23,7 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Diagnosed and fixed routing, DNS, and network interface issues
 - Accessed the Proxmox web UI remotely from another device
 - Configured the server to run with the laptop lid closed
+- Installed Docker and deployed n8n for workflow automation
 
 ---
 
@@ -95,6 +96,29 @@ nano /etc/systemd/logind.conf
 systemctl restart systemd-logind
 ```
 
+### 9. Installing Docker
+
+```bash
+apt install docker.io
+systemctl enable docker
+systemctl start docker
+```
+
+### 10. Deploying n8n for Workflow Automation
+Ran n8n as a Docker container with persistent storage:
+
+```bash
+docker run -d \
+  --name n8n \
+  --restart always \
+  -p 5678:5678 \
+  -e N8N_SECURE_COOKIE=false \
+  -v n8n_data:/home/node/.n8n \
+  n8nio/n8n
+```
+
+Accessible at `http://<proxmox-ip>:5678` from any device on the network.
+
 ---
 
 ## Issues Faced and How They Were Fixed
@@ -106,6 +130,7 @@ systemctl restart systemd-logind
 | Pings going to wrong interface | Default route via vmbr0 | Deleted vmbr0 route, added route via WiFi interface |
 | apt hanging for minutes | Proxmox enterprise repo timing out | Disabled enterprise and ceph repos |
 | Web UI unreachable from other devices | Traffic routing through disconnected vmbr0 | Removed vmbr0 subnet route |
+| n8n showing secure cookie error | Accessing over HTTP without TLS | Set `N8N_SECURE_COOKIE=false` environment variable |
 
 ---
 
@@ -116,6 +141,8 @@ systemctl restart systemd-logind
 - [ ] Configure persistent network settings so routes survive reboot
 - [ ] Set up automated backups
 - [ ] Expand storage
+- [ ] Set up TLS/HTTPS for n8n
+- [ ] Build automation workflows in n8n
 
 ---
 

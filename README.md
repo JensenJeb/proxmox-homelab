@@ -29,6 +29,9 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Deployed Pi-hole in an LXC container for DNS filtering and ad blocking
 - Set up nginx reverse proxy to access Pi-hole from the home network
 - Installed Tailscale VPN for secure remote access to the server from anywhere without opening router ports
+- Obtained TLS certificates via Tailscale and configured HTTPS for all services
+- Deployed Jellyfin in an LXC container for self-hosted media streaming
+- Configured nginx as a unified reverse proxy for all services with HTTPS
 
 ---
 
@@ -196,6 +199,73 @@ tailscale up
 
 After authenticating via the Tailscale URL, all services are accessible remotely via the Tailscale IP without opening any ports on the router. Traffic is peer to peer and never passes through Tailscale's servers.
 
+### 16. Enabling HTTPS with Tailscale Certificates
+Enabled MagicDNS and HTTPS certificates in the Tailscale admin panel, then generated certificates on the Proxmox host:
+
+```bash
+tailscale cert $(tailscale status --json | python3 -c "import sys,json; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
+mkdir -p /etc/ssl/tailscale
+mv proxmox.tail29e145.ts.net.crt /etc/ssl/tailscale/
+mv proxmox.tail29e145.ts.net.key /etc/ssl/tailscale/
+```
+
+### 17. Deploying Jellyfin in an LXC Container
+Created an Ubuntu 24.04 LXC container with IP `10.0.0.3/24` and installed Jellyfin:
+
+```bash
+curl -fsSL https://repo.jellyfin.org/install-debuntu.sh | bash
+```
+
+### 18. Unified nginx Reverse Proxy with HTTPS
+Consolidated all services into a single nginx config with TLS:
+
+```
+server {
+    listen 443 ssl;
+    server_name proxmox.tail29e145.ts.net;
+
+    ssl_certificate /etc/ssl/tailscale/proxmox.tail29e145.ts.net.crt;
+    ssl_certificate_key /etc/ssl/tailscale/proxmox.tail29e145.ts.net.key;
+
+    location /n8n/ {
+        proxy_pass http://127.0.0.1:5678/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_http_version 1.1;
+    }
+}
+
+server {
+    listen 8443 ssl;
+    server_name proxmox.tail29e145.ts.net;
+    ssl_certificate /etc/ssl/tailscale/proxmox.tail29e145.ts.net.crt;
+    ssl_certificate_key /etc/ssl/tailscale/proxmox.tail29e145.ts.net.key;
+    location / {
+        proxy_pass http://10.0.0.2/;
+    }
+}
+
+server {
+    listen 8920 ssl;
+    server_name proxmox.tail29e145.ts.net;
+    ssl_certificate /etc/ssl/tailscale/proxmox.tail29e145.ts.net.crt;
+    ssl_certificate_key /etc/ssl/tailscale/proxmox.tail29e145.ts.net.key;
+    location / {
+        proxy_pass http://10.0.0.3:8096;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_http_version 1.1;
+    }
+}
+```
+
+Services accessible via Tailscale:
+- n8n: `https://proxmox.tail29e145.ts.net/n8n`
+- Pi-hole: `https://proxmox.tail29e145.ts.net:8443`
+- Jellyfin: `https://proxmox.tail29e145.ts.net:8920`
+
 ---
 
 ## Issues Faced and How They Were Fixed
@@ -210,6 +280,8 @@ After authenticating via the Tailscale URL, all services are accessible remotely
 | n8n showing secure cookie error | Accessing over HTTP without TLS | Set `N8N_SECURE_COOKIE=false` environment variable |
 | LXC container had no internet | vmbr0 had no NAT rule after reboot | Added iptables MASQUERADE rule manually and made it persistent in interfaces file |
 | Pi-hole unreachable from home network | Container on isolated 10.0.0.0/24 subnet | Set up nginx reverse proxy on Proxmox host |
+| Pi-hole and Jellyfin broke behind subpath proxy | Apps don't support subpath routing | Gave each service its own SSL port instead |
+| Jellyfin password forgotten | No recovery option in UI | Reset password via sqlite3 directly on the database |
 
 ---
 
@@ -217,11 +289,11 @@ After authenticating via the Tailscale URL, all services are accessible remotely
 
 - [ ] Create first VM
 - [ ] Set up automated backups
-- [ ] Expand storage
-- [ ] Set up TLS/HTTPS for n8n via Tailscale
+- [ ] Expand storage with external drive for Jellyfin media
 - [ ] Build more automation workflows in n8n
 - [ ] Add CPU and RAM usage alerts
-- [ ] Configure Pi-hole as network-wide DNS
+- [ ] Configure Pi-hole as network-wide DNS on router
+- [ ] Add media to Jellyfin library
 
 ---
 
@@ -233,3 +305,6 @@ After authenticating via the Tailscale URL, all services are accessible remotely
 - LXC containers on an isolated bridge need NAT rules on the host to access the internet
 - nginx reverse proxy is a lightweight way to expose internal services without opening them directly to the home network
 - Tailscale provides zero-config peer to peer VPN without requiring port forwarding or a static IP
+- Tailscale MagicDNS and HTTPS certificates provide valid TLS without needing a purchased domain
+- Pi-hole v6 and Jellyfin don't support subpath reverse proxying; use separate ports instead
+- sqlite3 can be used to reset Jellyfin passwords directly on the database if locked out

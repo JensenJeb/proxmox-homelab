@@ -11,7 +11,7 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 | Laptop | Dell Inspiron |
 | CPU | Intel Core i7-11800H @ 2.30GHz (16 threads) |
 | RAM | 16GB |
-| Storage | ~94GB |
+| Storage | ~940GB |
 | Networking | WiFi (Intel AX) + USB-C Dock (Ethernet) |
 
 ---

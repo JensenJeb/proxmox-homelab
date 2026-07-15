@@ -32,6 +32,10 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Obtained TLS certificates via Tailscale and configured HTTPS for all services
 - Deployed Jellyfin in an LXC container for self-hosted media streaming
 - Configured nginx as a unified reverse proxy for all services with HTTPS
+- Deployed Homarr dashboard for centralized access to all services
+- Built an n8n automation workflow to add new nginx services via a web form
+- Mounted a 2TB external drive for Jellyfin media storage
+- Added Neon Genesis Evangelion to Jellyfin library
 
 ---
 
@@ -265,6 +269,68 @@ Services accessible via Tailscale:
 - n8n: `https://proxmox.tail29e145.ts.net/n8n`
 - Pi-hole: `https://proxmox.tail29e145.ts.net:8443`
 - Jellyfin: `https://proxmox.tail29e145.ts.net:8920`
+- Homarr: `https://proxmox.tail29e145.ts.net:7575`
+
+### 19. Deploying Homarr Dashboard
+Created an Ubuntu 24.04 LXC container with IP `10.0.0.5/24` and deployed Homarr via Docker:
+
+```bash
+docker run -d \
+  --name homarr \
+  --restart always \
+  -p 7575:7575 \
+  -e SECRET_ENCRYPTION_KEY=<64-char-hex-key> \
+  -v homarr_data:/appdata \
+  ghcr.io/homarr-labs/homarr:latest
+```
+
+Created the first admin user via the Homarr CLI:
+
+```bash
+docker exec -it homarr node /app/apps/cli/cli.cjs recreate-admin -u admin
+```
+
+Integrated Proxmox, Pi-hole and Jellyfin into the dashboard.
+
+### 20. n8n Automation for nginx Service Registration
+Built an n8n workflow with a web form that automatically adds new services to the nginx config and restarts nginx. A bash script on the Proxmox host handles the config writing:
+
+```bash
+# /usr/local/bin/add-nginx-service.sh
+SERVICE=$1
+IP=$2
+PORT=$3
+cat >> /etc/nginx/sites-available/proxmox-services << ENDOFCONFIG
+server {
+    listen $PORT ssl;
+    ...
+}
+ENDOFCONFIG
+systemctl restart nginx
+```
+
+n8n calls this script via SSH when the form is submitted and sends a Discord notification with the new service URL.
+
+### 21. Mounting External Storage for Jellyfin
+Connected a 2TB external hard drive and formatted it as ext4:
+
+```bash
+mkfs.ext4 /dev/sda3
+mkdir -p /mnt/media
+mount /dev/sda3 /mnt/media
+echo '/dev/sda3 /mnt/media ext4 defaults 0 2' >> /etc/fstab
+pct set 101 -mp0 /mnt/media,mp=/media
+```
+
+Transferred anime episodes via SCP from a Windows laptop and organized them into Jellyfin's expected folder structure:
+
+```
+/mnt/media/
+  Neon Genesis Evangelion/
+    Season 01/
+      Episode 01.mp4
+      ...
+```
 
 ---
 
@@ -282,6 +348,10 @@ Services accessible via Tailscale:
 | Pi-hole unreachable from home network | Container on isolated 10.0.0.0/24 subnet | Set up nginx reverse proxy on Proxmox host |
 | Pi-hole and Jellyfin broke behind subpath proxy | Apps don't support subpath routing | Gave each service its own SSL port instead |
 | Jellyfin password forgotten | No recovery option in UI | Reset password via sqlite3 directly on the database |
+| Homarr showing Internal Server Error | Missing SECRET_ENCRYPTION_KEY env variable | Recreated Docker container with the required key |
+| Homarr login failed with default credentials | No default user created on first run | Used Homarr CLI to create admin user |
+| Proxmox integration cert error in Homarr | Self-signed cert not trusted | Uploaded Proxmox CA cert to Homarr trusted certificates |
+| Proxmox token auth failing in Homarr | Token ID field expected just the token name not full ID | Changed Token ID from `root@pam!homarr` to just `homarr` |
 
 ---
 
@@ -289,11 +359,11 @@ Services accessible via Tailscale:
 
 - [ ] Create first VM
 - [ ] Set up automated backups
-- [ ] Expand storage with external drive for Jellyfin media
 - [ ] Build more automation workflows in n8n
 - [ ] Add CPU and RAM usage alerts
 - [ ] Configure Pi-hole as network-wide DNS on router
-- [ ] Add media to Jellyfin library
+- [ ] Add more media to Jellyfin library
+- [ ] Set up Sonarr/Radarr for automatic media downloads
 
 ---
 
@@ -308,3 +378,5 @@ Services accessible via Tailscale:
 - Tailscale MagicDNS and HTTPS certificates provide valid TLS without needing a purchased domain
 - Pi-hole v6 and Jellyfin don't support subpath reverse proxying; use separate ports instead
 - sqlite3 can be used to reset Jellyfin passwords directly on the database if locked out
+- Homarr v1 requires a SECRET_ENCRYPTION_KEY env variable and a CLI command to create the first admin user
+- For Proxmox integration in Homarr, use just the token name in the Token ID field, not the full `user@realm!tokenname` format

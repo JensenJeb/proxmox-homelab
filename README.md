@@ -36,6 +36,8 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Built an n8n automation workflow to add new nginx services via a web form
 - Mounted a 2TB external drive for Jellyfin media storage
 - Added Neon Genesis Evangelion to Jellyfin library
+- Deployed Filebrowser in an LXC container for web-based media uploads directly to the server
+- Mounted 2TB external drive into Filebrowser for media storage
 
 ---
 
@@ -332,6 +334,37 @@ Transferred anime episodes via SCP from a Windows laptop and organized them into
       ...
 ```
 
+### 22. Deploying Filebrowser for Web-Based Media Uploads
+Created an Ubuntu 24.04 LXC container with IP `10.0.0.6/24` and installed Filebrowser:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
+filebrowser users add admin <password> --perm.admin --database /root/filebrowser.db
+```
+
+Created a systemd service for persistence:
+
+```
+[Unit]
+Description=File Browser
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/filebrowser --database /root/filebrowser.db --address 0.0.0.0 --port 8080 --root /media
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Mounted the 2TB external drive into the container:
+
+```bash
+pct set 102 -mp0 /mnt/media,mp=/media
+```
+
+Accessible at `https://proxmox.tail29e145.ts.net:8080`. Files uploaded here go directly to the media drive shared with Jellyfin.
+
 ---
 
 ## Issues Faced and How They Were Fixed
@@ -352,6 +385,8 @@ Transferred anime episodes via SCP from a Windows laptop and organized them into
 | Homarr login failed with default credentials | No default user created on first run | Used Homarr CLI to create admin user |
 | Proxmox integration cert error in Homarr | Self-signed cert not trusted | Uploaded Proxmox CA cert to Homarr trusted certificates |
 | Proxmox token auth failing in Homarr | Token ID field expected just the token name not full ID | Changed Token ID from `root@pam!homarr` to just `homarr` |
+| Filebrowser showing entire filesystem | Root not set to media folder | Added `--root /media` flag to the systemd service |
+| Filebrowser password too short | Minimum password length is 12 characters | Used a longer password when creating the admin user |
 
 ---
 
@@ -359,10 +394,10 @@ Transferred anime episodes via SCP from a Windows laptop and organized them into
 
 - [ ] Create first VM
 - [ ] Set up automated backups
+- [ ] Build n8n workflow to auto-sort Filebrowser uploads into Jellyfin library and trigger rescan
 - [ ] Build more automation workflows in n8n
 - [ ] Add CPU and RAM usage alerts
 - [ ] Configure Pi-hole as network-wide DNS on router
-- [ ] Add more media to Jellyfin library
 - [ ] Set up Sonarr/Radarr for automatic media downloads
 
 ---

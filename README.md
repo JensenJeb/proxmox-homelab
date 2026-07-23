@@ -6,13 +6,13 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 
 ## Hardware
 
-| Component | Details |
-|-----------|---------|
-| Laptop | Dell Inspiron |
-| CPU | Intel Core i7-11800H @ 2.30GHz (16 threads) |
-| RAM | 16GB |
-| Storage | ~94GB |
-| Networking | WiFi (Intel AX) + USB-C Dock (Ethernet) |
+| Component  | Details                                     |
+| ---------- | ------------------------------------------- |
+| Laptop     | Dell Inspiron                               |
+| CPU        | Intel Core i7-11800H @ 2.30GHz (16 threads) |
+| RAM        | 16GB                                        |
+| Storage    | ~94GB                                       |
+| Networking | WiFi (Intel AX) + USB-C Dock (Ethernet)     |
 
 ---
 
@@ -38,43 +38,49 @@ Setting up a Proxmox home lab on a laptop with WiFi networking.
 - Added Neon Genesis Evangelion to Jellyfin library
 - Deployed Filebrowser in an LXC container for web-based media uploads directly to the server
 - Mounted 2TB external drive into Filebrowser for media storage
+- Built an n8n workflow to auto-sort media uploads into Jellyfin library structure and trigger rescans
+- Added a second admin user with Tailscale remote access and Linux shell access
 
 ---
 
 ## Steps Taken
 
 ### 1. Installing Proxmox
+
 Flashed Proxmox VE 9.2.2 onto a USB drive and installed it on the Dell Inspiron.
 
 ### 2. Getting Internet Access
+
 The laptop was connected via a USB-C dock with ethernet. The dock interface (`enx843a5bdb264b`) was brought up manually:
 
-```bash
+```
 ip link set enx843a5bdb264b up
 dhclient enx843a5bdb264b
 ```
 
 ### 3. Fixing Package Repositories
+
 The Proxmox enterprise repos required a paid subscription and were causing apt to hang. They were disabled:
 
-```bash
+```
 echo '# disabled' > /etc/apt/sources.list.d/pve-enterprise.list
 echo '# disabled' > /etc/apt/sources.list.d/ceph.list
 ```
 
 The Debian repo was added to sources.list:
 
-```bash
+```
 deb http://deb.debian.org/debian bullseye main contrib non-free
 ```
 
 ### 4. Installing WiFi Packages
 
-```bash
+```
 apt update && apt install wpasupplicant wireless-tools
 ```
 
 ### 5. Configuring WiFi
+
 Edited `/etc/network/interfaces` to add the WiFi interface:
 
 ```
@@ -86,25 +92,28 @@ iface wlp0s20f3 inet dhcp
 
 Brought the interface up:
 
-```bash
+```
 ifup wlp0s20f3
 ```
 
 ### 6. Fixing Routing
+
 The default route was going through `vmbr0` instead of WiFi. Fixed by removing the incorrect route and adding the correct one:
 
-```bash
+```
 ip route del 192.168.1.0/24 dev vmbr0
 ip route add default via 192.168.1.1 dev wlp0s20f3
 ```
 
 ### 7. Accessing the Web UI
+
 Proxmox web UI accessible at `https://<proxmox-ip>:8006` from any device on the network.
 
 ### 8. Lid Close Behavior
+
 Configured the server to keep running with the lid closed:
 
-```bash
+```
 nano /etc/systemd/logind.conf
 # Set: HandleLidSwitch=ignore
 systemctl restart systemd-logind
@@ -112,16 +121,17 @@ systemctl restart systemd-logind
 
 ### 9. Installing Docker
 
-```bash
+```
 apt install docker.io
 systemctl enable docker
 systemctl start docker
 ```
 
 ### 10. Deploying n8n for Workflow Automation
+
 Ran n8n as a Docker container with persistent storage:
 
-```bash
+```
 docker run -d \
   --name n8n \
   --restart always \
@@ -134,20 +144,24 @@ docker run -d \
 Accessible at `http://<proxmox-ip>:5678` from any device on the network.
 
 ### 11. Building a Battery Alert Workflow in n8n
+
 Created an automated workflow that checks battery status every 5 minutes and sends a Discord alert if the server is running on battery power.
 
 Workflow steps:
+
 1. **Schedule Trigger** - runs every 5 minutes
 2. **SSH Execute Command** - runs `acpi -b` on the Proxmox server to get battery status
 3. **IF node** - checks if the output contains `Discharging`
 4. **Discord node** - sends a warning message to a private Discord channel if true
 
 Alert message:
+
 ```
 ⚠️ WARNING: Proxmox is running on battery power! Check the server immediately.
 ```
 
 ### 12. Setting Up Internal Container Network
+
 Configured vmbr0 as an isolated internal bridge with NAT through WiFi so containers can access the internet without being on the home network:
 
 ```
@@ -163,16 +177,18 @@ iface vmbr0 inet static
 ```
 
 ### 13. Deploying Pi-hole in an LXC Container
+
 Created an Ubuntu 24.04 LXC container with IP `10.0.0.2/24` and installed Pi-hole:
 
-```bash
+```
 curl -sSL https://install.pi-hole.net | bash
 ```
 
 ### 14. Setting Up nginx Reverse Proxy for Pi-hole
+
 Installed nginx on the Proxmox host to expose Pi-hole to the home network:
 
-```bash
+```
 apt install nginx -y
 ```
 
@@ -187,7 +203,7 @@ server {
 }
 ```
 
-```bash
+```
 ln -s /etc/nginx/sites-available/pihole /etc/nginx/sites-enabled/
 systemctl restart nginx
 ```
@@ -195,9 +211,10 @@ systemctl restart nginx
 Pi-hole dashboard accessible at `http://192.168.1.159:8888/admin`.
 
 ### 15. Setting Up Tailscale VPN
+
 Installed Tailscale on the Proxmox host for secure remote access from anywhere:
 
-```bash
+```
 curl -fsSL https://tailscale.com/install.sh | sh
 apt install tailscale -y
 tailscale up
@@ -206,9 +223,10 @@ tailscale up
 After authenticating via the Tailscale URL, all services are accessible remotely via the Tailscale IP without opening any ports on the router. Traffic is peer to peer and never passes through Tailscale's servers.
 
 ### 16. Enabling HTTPS with Tailscale Certificates
+
 Enabled MagicDNS and HTTPS certificates in the Tailscale admin panel, then generated certificates on the Proxmox host:
 
-```bash
+```
 tailscale cert $(tailscale status --json | python3 -c "import sys,json; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
 mkdir -p /etc/ssl/tailscale
 mv proxmox.tail29e145.ts.net.crt /etc/ssl/tailscale/
@@ -216,13 +234,15 @@ mv proxmox.tail29e145.ts.net.key /etc/ssl/tailscale/
 ```
 
 ### 17. Deploying Jellyfin in an LXC Container
+
 Created an Ubuntu 24.04 LXC container with IP `10.0.0.3/24` and installed Jellyfin:
 
-```bash
+```
 curl -fsSL https://repo.jellyfin.org/install-debuntu.sh | bash
 ```
 
 ### 18. Unified nginx Reverse Proxy with HTTPS
+
 Consolidated all services into a single nginx config with TLS:
 
 ```
@@ -268,15 +288,17 @@ server {
 ```
 
 Services accessible via Tailscale:
+
 - n8n: `https://proxmox.tail29e145.ts.net/n8n`
 - Pi-hole: `https://proxmox.tail29e145.ts.net:8443`
 - Jellyfin: `https://proxmox.tail29e145.ts.net:8920`
 - Homarr: `https://proxmox.tail29e145.ts.net:7575`
 
 ### 19. Deploying Homarr Dashboard
+
 Created an Ubuntu 24.04 LXC container with IP `10.0.0.5/24` and deployed Homarr via Docker:
 
-```bash
+```
 docker run -d \
   --name homarr \
   --restart always \
@@ -288,16 +310,17 @@ docker run -d \
 
 Created the first admin user via the Homarr CLI:
 
-```bash
+```
 docker exec -it homarr node /app/apps/cli/cli.cjs recreate-admin -u admin
 ```
 
 Integrated Proxmox, Pi-hole and Jellyfin into the dashboard.
 
 ### 20. n8n Automation for nginx Service Registration
+
 Built an n8n workflow with a web form that automatically adds new services to the nginx config and restarts nginx. A bash script on the Proxmox host handles the config writing:
 
-```bash
+```
 # /usr/local/bin/add-nginx-service.sh
 SERVICE=$1
 IP=$2
@@ -314,9 +337,10 @@ systemctl restart nginx
 n8n calls this script via SSH when the form is submitted and sends a Discord notification with the new service URL.
 
 ### 21. Mounting External Storage for Jellyfin
+
 Connected a 2TB external hard drive and formatted it as ext4:
 
-```bash
+```
 mkfs.ext4 /dev/sda3
 mkdir -p /mnt/media
 mount /dev/sda3 /mnt/media
@@ -335,9 +359,10 @@ Transferred anime episodes via SCP from a Windows laptop and organized them into
 ```
 
 ### 22. Deploying Filebrowser for Web-Based Media Uploads
+
 Created an Ubuntu 24.04 LXC container with IP `10.0.0.6/24` and installed Filebrowser:
 
-```bash
+```
 curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
 filebrowser users add admin <password> --perm.admin --database /root/filebrowser.db
 ```
@@ -359,34 +384,120 @@ WantedBy=multi-user.target
 
 Mounted the 2TB external drive into the container:
 
-```bash
+```
 pct set 102 -mp0 /mnt/media,mp=/media
 ```
 
 Accessible at `https://proxmox.tail29e145.ts.net:8080`. Files uploaded here go directly to the media drive shared with Jellyfin.
 
+### 23. n8n Automation for Auto-Sorting Media into Jellyfin
+
+Built an n8n workflow that watches for new uploads in the incoming folder and automatically sorts them into Jellyfin's library structure, then triggers a rescan.
+
+File naming convention required for auto-sort:
+
+```
+ShowName - S01E01.mp4
+```
+
+Created a sort script on the Proxmox host:
+
+```bash
+nano /usr/local/bin/sort-media.sh
+```
+
+```bash
+#!/bin/bash
+INCOMING="/mnt/media/incoming"
+MEDIA="/mnt/media"
+
+for f in "$INCOMING"/*; do
+    [ -f "$f" ] || continue
+    filename=$(basename "$f")
+    show=$(echo "$filename" | sed 's/ - S[0-9].*//')
+    season=$(echo "$filename" | grep -oP 'S\K[0-9]+' | head -1)
+    season_padded=$(printf "%02d" $season)
+
+    dest="$MEDIA/$show/Season $season_padded"
+    mkdir -p "$dest"
+    mv "$f" "$dest/"
+    echo "Moved $filename to $dest"
+done
+```
+
+```bash
+chmod +x /usr/local/bin/sort-media.sh
+```
+
+n8n workflow steps:
+
+1. **Schedule Trigger** - runs every 5 minutes
+2. **SSH Execute Command** - runs `ls /mnt/media/incoming/` to check for new files
+3. **IF node** - checks if output is not empty
+4. **SSH Execute Command (true branch)** - runs `/usr/local/bin/sort-media.sh`
+5. **SSH Execute Command** - triggers Jellyfin library rescan via API:
+
+```bash
+curl -s -X POST "http://10.0.0.3:8096/Library/Refresh" -H "X-Emby-Token: YOUR_API_KEY"
+```
+
+Files uploaded to the `incoming` folder via Filebrowser are automatically sorted and appear in Jellyfin within 5 minutes.
+
+### 24. Adding a Second Admin User with Remote Access
+
+#### Proxmox Web UI Access
+
+Created a new user in the Proxmox web UI and granted full admin permissions:
+
+```
+pveum user add <username>@pve --password '<password>'
+pveum aclmod / -user <username>@pve -role Administrator -propagate 1
+```
+
+Or via the UI: Datacenter > Users > Add, then Datacenter > Permissions > Add > User Permission with path `/`, role `Administrator`, and Propagate checked.
+
+#### Tailscale Access
+
+Invited the user to the Tailscale network via the Tailscale admin panel (login.tailscale.com > Settings > Users > Invite user). Once they install Tailscale and join the tailnet, they can reach the Proxmox web UI at:
+
+```
+https://proxmox.tail29e145.ts.net:8006
+```
+
+#### Linux Shell Access
+
+The Proxmox web UI shell requires a Linux system account separate from the Proxmox web UI account. Created one on the host:
+
+```
+adduser <username>
+usermod -aG sudo <username>
+```
+
+The user logs into the shell terminal with their Linux username and password.
+
 ---
 
 ## Issues Faced and How They Were Fixed
 
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| `apt` couldn't find packages | No internet, missing repos | Brought up dock ethernet, added Debian repo |
-| DNS resolution failing | No DNS server configured | Added Google DNS: `echo "nameserver 8.8.8.8" > /etc/resolv.conf` |
-| Pings going to wrong interface | Default route via vmbr0 | Deleted vmbr0 route, added route via WiFi interface |
-| apt hanging for minutes | Proxmox enterprise repo timing out | Disabled enterprise and ceph repos |
-| Web UI unreachable from other devices | Traffic routing through disconnected vmbr0 | Removed vmbr0 subnet route |
-| n8n showing secure cookie error | Accessing over HTTP without TLS | Set `N8N_SECURE_COOKIE=false` environment variable |
-| LXC container had no internet | vmbr0 had no NAT rule after reboot | Added iptables MASQUERADE rule manually and made it persistent in interfaces file |
-| Pi-hole unreachable from home network | Container on isolated 10.0.0.0/24 subnet | Set up nginx reverse proxy on Proxmox host |
-| Pi-hole and Jellyfin broke behind subpath proxy | Apps don't support subpath routing | Gave each service its own SSL port instead |
-| Jellyfin password forgotten | No recovery option in UI | Reset password via sqlite3 directly on the database |
-| Homarr showing Internal Server Error | Missing SECRET_ENCRYPTION_KEY env variable | Recreated Docker container with the required key |
-| Homarr login failed with default credentials | No default user created on first run | Used Homarr CLI to create admin user |
-| Proxmox integration cert error in Homarr | Self-signed cert not trusted | Uploaded Proxmox CA cert to Homarr trusted certificates |
-| Proxmox token auth failing in Homarr | Token ID field expected just the token name not full ID | Changed Token ID from `root@pam!homarr` to just `homarr` |
-| Filebrowser showing entire filesystem | Root not set to media folder | Added `--root /media` flag to the systemd service |
-| Filebrowser password too short | Minimum password length is 12 characters | Used a longer password when creating the admin user |
+| Issue                                           | Cause                                                   | Fix                                                                               |
+| ----------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `apt` couldn't find packages                    | No internet, missing repos                              | Brought up dock ethernet, added Debian repo                                       |
+| DNS resolution failing                          | No DNS server configured                                | Added Google DNS: `echo "nameserver 8.8.8.8" > /etc/resolv.conf`                 |
+| Pings going to wrong interface                  | Default route via vmbr0                                 | Deleted vmbr0 route, added route via WiFi interface                               |
+| apt hanging for minutes                         | Proxmox enterprise repo timing out                      | Disabled enterprise and ceph repos                                                |
+| Web UI unreachable from other devices           | Traffic routing through disconnected vmbr0              | Removed vmbr0 subnet route                                                        |
+| n8n showing secure cookie error                 | Accessing over HTTP without TLS                         | Set `N8N_SECURE_COOKIE=false` environment variable                                |
+| LXC container had no internet                   | vmbr0 had no NAT rule after reboot                      | Added iptables MASQUERADE rule manually and made it persistent in interfaces file |
+| Pi-hole unreachable from home network           | Container on isolated 10.0.0.0/24 subnet                | Set up nginx reverse proxy on Proxmox host                                        |
+| Pi-hole and Jellyfin broke behind subpath proxy | Apps don't support subpath routing                      | Gave each service its own SSL port instead                                        |
+| Jellyfin password forgotten                     | No recovery option in UI                                | Reset password via sqlite3 directly on the database                               |
+| Homarr showing Internal Server Error            | Missing SECRET_ENCRYPTION_KEY env variable              | Recreated Docker container with the required key                                  |
+| Homarr login failed with default credentials    | No default user created on first run                    | Used Homarr CLI to create admin user                                              |
+| Proxmox integration cert error in Homarr        | Self-signed cert not trusted                            | Uploaded Proxmox CA cert to Homarr trusted certificates                           |
+| Proxmox token auth failing in Homarr            | Token ID field expected just the token name not full ID | Changed Token ID from `root@pam!homarr` to just `homarr`                         |
+| Filebrowser showing entire filesystem           | Root not set to media folder                            | Added `--root /media` flag to the systemd service                                 |
+| Filebrowser password too short                  | Minimum password length is 12 characters                | Used a longer password when creating the admin user                               |
+| Second user shell login failing                 | Proxmox shell requires a Linux PAM account              | Created a separate Linux system user with `adduser`                               |
 
 ---
 
@@ -415,3 +526,4 @@ Accessible at `https://proxmox.tail29e145.ts.net:8080`. Files uploaded here go d
 - sqlite3 can be used to reset Jellyfin passwords directly on the database if locked out
 - Homarr v1 requires a SECRET_ENCRYPTION_KEY env variable and a CLI command to create the first admin user
 - For Proxmox integration in Homarr, use just the token name in the Token ID field, not the full `user@realm!tokenname` format
+- The Proxmox web shell uses Linux PAM login, which is separate from the Proxmox web UI account; both accounts must be created independently
